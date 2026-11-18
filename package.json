@@ -4,12 +4,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "copy-wasm": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync('node_modules/highs/build/highs.wasm','public/highs.wasm')\"",
+    "predev": "npm run copy-wasm",
     "dev": "vite",
+    "prebuild": "npm run copy-wasm",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "highs": "^1.15.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

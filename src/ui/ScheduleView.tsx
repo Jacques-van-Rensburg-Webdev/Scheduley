@@ -5,6 +5,7 @@ import {
 } from '../scheduler';
 import { findSchedule, notify, nowIso, scheduleInput, useStore, type AppState } from '../store';
 import { Empty, Modal, MonthPicker, Pill, TeamPicker, cx, hoursText, useNames } from './common';
+import { runOptimiser } from './optimiser';
 
 interface Props {
   teamId: ID;
@@ -28,6 +29,7 @@ export function ScheduleView({ teamId, setTeamId, month, setMonth }: Props) {
   const [picking, setPicking] = useState<SlotRef | null>(null);
   const [dragging, setDragging] = useState<SlotRef | null>(null);
   const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const schedule = findSchedule(state, teamId, month);
   const input = useMemo(() => scheduleInput(state, teamId, month), [state, teamId, month]);
@@ -71,6 +73,33 @@ export function ScheduleView({ teamId, setTeamId, month, setMonth }: Props) {
     });
     setMessage(`Generated in ${ms} ms${keep.length ? `, keeping ${keep.length} manual change${keep.length === 1 ? '' : 's'}` : ''}. ` +
       (res.unfilled.length ? `${res.unfilled.length} slot${res.unfilled.length === 1 ? '' : 's'} couldn't be filled.` : 'Every slot is filled.'));
+  };
+
+  /** Runs the slower optimiser in the background and keeps its plan if it's at least as good. */
+  const onOptimise = async () => {
+    const keep = assignments.filter((a) => a.manual && a.employeeId);
+    const fixedInput = { ...input, fixed: keep };
+    const baseline = check ?? generate(fixedInput);
+    const hoursOff = (stats: { hours: number; target: number }[]) => Math.round(stats.reduce((n, x) => n + Math.abs(x.hours - x.target), 0));
+    setBusy(true);
+    setMessage('Optimising… this searches many combinations and can take a few seconds.');
+    try {
+      const { result, ms } = await runOptimiser(fixedInput);
+      if (!result) return setMessage("The optimiser couldn't find a better valid plan. The schedule is unchanged.");
+      if (result.unfilled.length > baseline.unfilled.length)
+        return setMessage(`The optimiser's plan would leave more slots empty than the current one, so the schedule is unchanged.`);
+      update((d) => {
+        const sc = findSchedule(d, teamId, month);
+        if (sc) Object.assign(sc, { assignments: result.assignments, generatedAt: nowIso() });
+        else d.schedules.push({ teamId, month, status: 'draft', assignments: result.assignments, generatedAt: nowIso() });
+      });
+      setMessage(`Optimised in ${(ms / 1000).toFixed(1)} s: ${result.unfilled.length} empty slot${result.unfilled.length === 1 ? '' : 's'} (was ${baseline.unfilled.length}), ` +
+        `${hoursOff(result.stats)} h off target in total (was ${hoursOff(baseline.stats)}).`);
+    } catch (e) {
+      setMessage(`The optimiser failed: ${(e as Error).message}. The schedule is unchanged.`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onPublish = () => update((d) => {
@@ -127,7 +156,8 @@ export function ScheduleView({ teamId, setTeamId, month, setMonth }: Props) {
           {!schedule ? <Pill>Not planned</Pill> : schedule.status === 'published' ? <Pill tone="good">Published</Pill> : <Pill tone="info">Draft</Pill>}
         </div>
         <div className="toolbar-actions">
-          <button className="btn primary" onClick={onGenerate} disabled={!shifts.length}>Generate</button>
+          <button className="btn primary" onClick={onGenerate} disabled={!shifts.length || busy}>Generate</button>
+          <button className="btn" onClick={onOptimise} disabled={!shifts.length || busy} title="Slower search for a better plan: fewer empty slots, hours closer to target">{busy ? 'Optimising…' : 'Optimise'}</button>
           {schedule && schedule.status === 'draft' && <button className="btn" onClick={onPublish}>Publish</button>}
           {schedule && schedule.status === 'published' && <button className="btn" onClick={onUnpublish}>Back to draft</button>}
           {schedule && <button className="btn ghost" onClick={onClear}>Clear</button>}

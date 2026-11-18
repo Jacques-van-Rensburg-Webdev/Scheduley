@@ -60,7 +60,8 @@ export const targetHours = (e: Employee, month: MonthStr, requests: TimeOffReque
 const slotKey = (shiftId: ID, slot: number) => `${shiftId}#${slot}`;
 const shiftName = (s: Shift) => `${s.label ? s.label + ' ' : ''}${formatTimes(s)}`;
 
-class Plan {
+/** @internal The month being planned (shared with the optimiser in solver.ts). */
+export class Plan {
   readonly shifts: Shift[];
   readonly team: Employee[];
   readonly people = new Map<ID, Employee>();
@@ -147,7 +148,7 @@ class Plan {
  * Everything wrong with `e` working `s`, given the rest of the plan: built-in rules, every rule
  * that applies to them, and "don't schedule with" rules of the people already on the shift.
  */
-function violations(plan: Plan, e: Employee, s: Shift, opts: { ignorePartner?: boolean } = {}): Violation[] {
+export function violations(plan: Plan, e: Employee, s: Shift, opts: { ignorePartner?: boolean } = {}): Violation[] {
   const { requests, rules, settings, month } = plan.input;
   const out: Violation[] = [];
   const builtIn = (code: string, message: string) => out.push({ code, message, hard: true, weight: 0 });
@@ -180,7 +181,7 @@ function violations(plan: Plan, e: Employee, s: Shift, opts: { ignorePartner?: b
   return out;
 }
 
-const hard = (v: Violation[]) => v.filter((x) => x.hard);
+export const hard = (v: Violation[]) => v.filter((x) => x.hard);
 const softCost = (v: Violation[]) => v.reduce((a, x) => a + (x.hard ? 0 : x.weight), 0);
 
 interface Need { rule: Rule; skill: string; count: number }
@@ -421,7 +422,7 @@ function shortfalls(plan: Plan): Issue[] {
   return out;
 }
 
-function summarise(plan: Plan, targets?: Map<ID, number>): ScheduleResult {
+export function summarise(plan: Plan, targets?: Map<ID, number>): ScheduleResult {
   const { month, requests, settings } = plan.input;
   const unfilled: Unfilled[] = [];
   for (const s of plan.shifts)
